@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+output/
+*.xml
+*.net.xml
+*.rou.xml
+*.osm
+*.mp4
+*.pptx
+.DS_Store
+.idea/
+.vscode/
