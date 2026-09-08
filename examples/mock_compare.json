@@ -1,0 +1,77 @@
+[
+  {
+    "t": 0.0,
+    "peak": 0.0,
+    "intent": {
+      "congested_direction": "none",
+      "extend_green_seconds": 0,
+      "dispatch_av": false,
+      "alert_passengers": false,
+      "rationale": "rule: worst_occ=0.70 av_wait=0",
+      "module": "coordinator",
+      "source": "rule",
+      "sim_time": 0.0
+    },
+    "applied": {
+      "sim_time": 0.0,
+      "source": "rule",
+      "direction": "none",
+      "edge_id": null,
+      "extend_applied": 0,
+      "signal_extended": false,
+      "dispatch_av": false,
+      "alert_issued": false,
+      "skipped_reason": "no_direction"
+    }
+  },
+  {
+    "t": 1350.0,
+    "peak": 1.0,
+    "intent": {
+      "congested_direction": "east_to_cbd",
+      "extend_green_seconds": 20,
+      "dispatch_av": true,
+      "alert_passengers": true,
+      "rationale": "rule: worst_occ=0.90 av_wait=5",
+      "module": "coordinator",
+      "source": "rule",
+      "sim_time": 1350.0
+    },
+    "applied": {
+      "sim_time": 1350.0,
+      "source": "rule",
+      "direction": "east_to_cbd",
+      "edge_id": "479165267",
+      "extend_applied": 20,
+      "signal_extended": true,
+      "dispatch_av": true,
+      "alert_issued": true,
+      "skipped_reason": null
+    }
+  },
+  {
+    "t": 2700.0,
+    "peak": 0.0,
+    "intent": {
+      "congested_direction": "none",
+      "extend_green_seconds": 0,
+      "dispatch_av": false,
+      "alert_passengers": false,
+      "rationale": "rule: worst_occ=0.70 av_wait=0",
+      "module": "coordinator",
+      "source": "rule",
+      "sim_time": 2700.0
+    },
+    "applied": {
+      "sim_time": 2700.0,
+      "source": "rule",
+      "direction": "none",
+      "edge_id": null,
+      "extend_applied": 0,
+      "signal_extended": false,
+      "dispatch_av": false,
+      "alert_issued": false,
+      "skipped_reason": "no_direction"
+    }
+  }
+]

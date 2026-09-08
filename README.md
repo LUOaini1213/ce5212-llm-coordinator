@@ -23,11 +23,11 @@ tests/           unittest against shipped functions
 ## Quick start
 
 ```bash
-python -m unittest tests.test_coordinator -v
-python scripts/mock_compare.py
+python -m unittest tests.test_coordinator -v      # 16 tests, standard library, ~0.1 s
+python scripts/mock_compare.py                     # three deterministic ticks -> output/mock_compare.json
 ```
 
-Peak tick (t=1350) should pick `east_to_cbd` and ground to example edge `479165267`. Off-peak ticks skip with `no_direction`.
+Peak tick (t=1350) should pick `east_to_cbd` and ground to example edge `479165267`. Off-peak ticks skip with `no_direction`. The expected output is committed as [`examples/mock_compare.json`](examples/mock_compare.json); CI runs both commands on every push.
 
 ## Honest results (from the private SUMO runs)
 
@@ -37,7 +37,15 @@ Rule coordinator with too-low AV triggers flooded the feeder lot (856 dispatches
 
 Two numbers from the private course runs are quoted on my CV and site. They are **not** reproducible from this repo (the SUMO network, person demand and Ollama loop stay in the course folder), so here is exactly what they mean:
 
-- **43 / 44 (97.7%)** — with the model demoted to a yes/no approver of rule-proposed actions, it approved 43 of 44 candidate actions correctly in the course simulation log; the single rejection was a defensible time-slack call. Not a production KPI.
+- **43 approvals, 0 rejections** — with the model demoted to a yes/no approver of rule-proposed
+  actions, the rule layer proposed **43** candidate actions across the 180 coordination ticks of the
+  logged run and the model approved **every one of them**. **137 of the 180 ticks (76%) had no
+  candidate at all and never reached the model.** An earlier write-up quoted "43 of 44 (97.7%),
+  the single rejection a defensible time-slack call"; re-reading the raw log on 2026-09-08 showed
+  that 44 is the VMS count from a *separate, rule-only* run whose ticks are not nested with this
+  one, so 44 − 43 was never a rejection and that rejection never happened. **The model has not
+  turned anything down, so "the gate would stop a bad action" is a design intent, not a verified
+  result.** Not a production KPI either way.
 - **Bus 95 +2.2 min** — synchronous model calls blocked the TraCI event loop; average end-to-end delay on Bus 95 rose by 2.2 minutes and 57 passengers did not arrive before the simulation cut-off. That is why approval belongs off the critical path (lower tick rate, or async pub-sub).
 
 The corridor is 1.4 km² of SUMO network calibrated on 2,874 measured speeds, with 645 simulated commuters (35% time-sensitive / 40% price-sensitive / 25% information-asymmetric). Course project, spring 2026.
