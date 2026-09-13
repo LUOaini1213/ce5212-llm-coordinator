@@ -1,7 +1,8 @@
 name: ci
 
 # Standard library only: the coordinator core has no dependencies, no model
-# and no SUMO. The mock comparison must reproduce the committed example.
+# and no SUMO. The mock comparison must reproduce the committed example, and
+# the approval numbers in README.md must fall out of data/course_run_B_s42.jsonl.
 
 on:
   push:
@@ -28,3 +29,5 @@ jobs:
           assert fresh == committed, "output/mock_compare.json drifted from examples/mock_compare.json"
           print("mock comparison matches the committed example")
           PY
+      - name: Approval numbers in the README are recounted from the shipped log
+        run: python scripts/recount_approvals.py --check
