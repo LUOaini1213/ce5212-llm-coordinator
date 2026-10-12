@@ -23,11 +23,21 @@ tests/           unittest against shipped functions
 ## Quick start
 
 ```bash
-python -m unittest tests.test_coordinator -v      # 16 tests, standard library, ~0.1 s
+python -m unittest discover -s tests -v             # 25 tests, standard library
 python scripts/mock_compare.py                     # three deterministic ticks -> output/mock_compare.json
 ```
 
 Peak tick (t=1350) should pick `east_to_cbd` and ground to example edge `479165267`. Off-peak ticks skip with `no_direction`. The expected output is committed as [`examples/mock_compare.json`](examples/mock_compare.json); CI runs both commands on every push.
+
+**Input boundary (2026-10-12):** sanitizer and grounding share the same parsers.
+Flags accept JSON booleans or explicit `true`/`false` text (case/whitespace
+ignored); numbers, collections and other strings default to false. The string
+`"false"` cannot trigger dispatch or an alert. Green extensions retain finite
+numeric/integer-text coercion and the 0–25 s clamp; booleans, nonfinite numbers
+and invalid values give zero extension without an overflow. These are offline
+typed-input regressions, not a new model/SUMO evaluation. The existing three-tick
+example and course-log numbers remain unchanged; see
+[intent-type-checks.json](docs/intent-type-checks.json).
 
 ## Honest results (from the private SUMO runs)
 
