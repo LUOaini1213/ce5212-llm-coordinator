@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "kind": "offline_intent_type_boundary_regressions",
+  "base_commit": "25221d6489fdf26eed5452e773f2a86efa67dd31",
+  "python": "3.13.14",
+  "tests": {
+    "command": "python -B -m unittest discover -s tests -v",
+    "passed": 25,
+    "failed": 0,
+    "skipped": 0,
+    "legacy_cases": 16,
+    "new_cases": 9
+  },
+  "historical_mock_example": {
+    "git_blob": "5ac74091e12074bdabe3d38443f7a803a7255f86",
+    "current_rule_ticks_equal_committed": true,
+    "historical_file_changed": false
+  },
+  "source_hash_policy": "SHA256 of LF-normalized UTF-8 source, independent of Windows checkout conversion.",
+  "source_sha256": {
+    "coordinator/schema.py": "8a95700234a25ad36a9698756cbdfdfc8ed923d6378cffd0ae75e79f2741ed25",
+    "coordinator/grounding.py": "816b734acbbe91040adca597a109dcc304f350bc937dbf639fdcdd0ff4bbf2e7",
+    "tests/test_intent_types.py": "d80fd5378d4b24f2d214c6a206d96473aa254e448a71ccaf1010b076b09e0faa"
+  },
+  "boundary": "Synthetic inputs through actual parse/sanitize/grounding functions. Model policy quality and simulator behavior were not measured. Independent dispatch/alert semantics of valid intents are preserved.",
+  "model_calls": 0,
+  "sumo_or_gpu_runs": 0,
+  "new_performance_claims": false
+}

@@ -5,6 +5,7 @@ Example edge IDs are public OSM way identifiers used in the course corridor
 network; they are not private telemetry.
 """
 
+import math
 from typing import Any, Mapping
 
 # Example corridor (NUS / AYE). Override via ground_intent(mapping=...).
@@ -19,6 +20,28 @@ SEMANTIC_DIRECTIONS: tuple[str, ...] = tuple(DIRECTION_TO_EDGE.keys()) + ("none"
 
 EXTEND_MIN = 0
 EXTEND_MAX = 25
+
+
+def parse_bool_flag(value: Any) -> bool:
+    """Accept JSON booleans or explicit true/false text; never arbitrary truthiness."""
+    if type(value) is bool:
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() == "true"
+    return False
+
+
+def parse_extend_seconds(value: Any) -> int:
+    """Retain finite numeric/integer-text coercion, clamp to the actuator bounds."""
+    if type(value) not in (int, float, str):
+        return 0
+    if type(value) is float and not math.isfinite(value):
+        return 0
+    try:
+        extend = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    return max(EXTEND_MIN, min(EXTEND_MAX, extend))
 
 
 def empty_intent(sim_time: float, source: str, rationale: str = "no action") -> dict[str, Any]:
@@ -43,19 +66,15 @@ def sanitize_intent(raw: Mapping[str, Any] | Any, sim_time: float, source: str) 
     if direction not in SEMANTIC_DIRECTIONS:
         direction = "none"
 
-    try:
-        extend = int(raw.get("extend_green_seconds", 0))
-    except (TypeError, ValueError):
-        extend = 0
-    extend = max(EXTEND_MIN, min(EXTEND_MAX, extend))
+    extend = parse_extend_seconds(raw.get("extend_green_seconds", 0))
     if direction == "none":
         extend = 0
 
     return {
         "congested_direction": direction,
         "extend_green_seconds": extend,
-        "dispatch_av": bool(raw.get("dispatch_av", False)),
-        "alert_passengers": bool(raw.get("alert_passengers", False)),
+        "dispatch_av": parse_bool_flag(raw.get("dispatch_av", False)),
+        "alert_passengers": parse_bool_flag(raw.get("alert_passengers", False)),
         "rationale": str(raw.get("rationale", ""))[:200],
         "module": "coordinator",
         "source": source,
