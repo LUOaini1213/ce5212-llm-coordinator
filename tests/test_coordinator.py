@@ -18,7 +18,7 @@ from coordinator.policy import PolicyOptimizer
 from coordinator.rule_coord import RuleBasedCoordinator
 from coordinator.schema import DIRECTION_TO_EDGE, sanitize_intent
 from coordinator.snapshot import EdgeState, NetworkSnapshot
-from scripts import mock_compare
+from scripts import mock_compare, recount_approvals
 
 
 def _snap(**kwargs) -> NetworkSnapshot:
@@ -169,18 +169,41 @@ class SanitizeRepoTests(unittest.TestCase):
         "29795" + "70847",
     )
 
+    # .jsonl / .json are scanned too, so the shipped course log and the
+    # committed mock-compare example fall under this guard, not just prose.
+    SCANNED_SUFFIXES = {".py", ".md", ".txt", ".json", ".jsonl", ".yml", ".yaml"}
+    SKIP_DIRS = {"__pycache__", ".git", ".venv", "venv", ".pytest_cache"}
+
     def test_public_tree_has_no_student_id_or_home_path(self):
         hits = []
         for path in ROOT.rglob("*"):
-            if path.suffix.lower() not in {".py", ".md", ".txt"}:
+            if path.suffix.lower() not in self.SCANNED_SUFFIXES:
                 continue
-            if "__pycache__" in path.parts:
+            if self.SKIP_DIRS.intersection(path.parts):
                 continue
             text = path.read_text(encoding="utf-8")
             for token in self.FORBIDDEN:
                 if token in text:
                     hits.append(f"{path.relative_to(ROOT)}:{token}")
         self.assertEqual(hits, [])
+
+
+class RecountTests(unittest.TestCase):
+    """The approval numbers quoted in the README are recounted from the log."""
+
+    def test_recount_matches_the_logged_run(self):
+        counts = recount_approvals.recount(recount_approvals.DEFAULT_LOG)
+        self.assertEqual(counts["ticks"], 180)
+        self.assertEqual(counts["candidates"], 43)
+        self.assertEqual(counts["approved"], 43)
+        self.assertEqual(counts["rejected"], 0)
+        self.assertEqual(counts["no_candidate"], 137)
+        self.assertEqual(counts["model_calls"], 43)
+        self.assertEqual(counts["no_candidate_pct"], 76.1)
+
+    def test_readme_quotes_only_numbers_the_log_supports(self):
+        counts = recount_approvals.recount(recount_approvals.DEFAULT_LOG)
+        self.assertEqual(recount_approvals.check_readme(counts, recount_approvals.README), [])
 
 
 class MockCompareScriptTests(unittest.TestCase):
