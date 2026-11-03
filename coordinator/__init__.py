@@ -13,6 +13,7 @@ from .schema import (
 )
 from .snapshot import EdgeState, NetworkSnapshot, PassengerPersona
 from .parse import extract_json_text, parse_json
+from .approval import parse_approvals
 from .grounding import ground_intent
 from .rule_coord import RuleBasedCoordinator
 from .policy import PolicyOptimizer
@@ -29,6 +30,7 @@ __all__ = [
     "PassengerPersona",
     "extract_json_text",
     "parse_json",
+    "parse_approvals",
     "ground_intent",
     "RuleBasedCoordinator",
     "PolicyOptimizer",
