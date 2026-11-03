@@ -6,12 +6,31 @@ import json
 from typing import Any
 
 
+THINK_OPEN = "<think>"
+THINK_CLOSE = "</think>"
+
+
+def strip_think_blocks(text: str) -> str:
+    """Remove each ``<think>...</think>`` pair, searching for the close tag
+    only after its open tag.
+
+    A stray ``</think>`` before ``<think>``, or an unclosed ``<think>``, is
+    left in place for the brace extraction below to step over. Every pass
+    either removes a pair (the text gets shorter) or stops, so this always
+    terminates.
+    """
+    while True:
+        start = text.find(THINK_OPEN)
+        if start < 0:
+            return text
+        end = text.find(THINK_CLOSE, start + len(THINK_OPEN))
+        if end < 0:
+            return text
+        text = (text[:start] + text[end + len(THINK_CLOSE):]).strip()
+
+
 def extract_json_text(raw: str) -> str:
-    text = raw.strip()
-    while "<think>" in text and "</think>" in text:
-        start = text.find("<think>")
-        end = text.find("</think>") + 8
-        text = (text[:start] + text[end:]).strip()
+    text = strip_think_blocks(raw.strip())
     text = text.replace("```json", "").replace("```", "").strip()
     first_brace = text.find("{")
     first_bracket = text.find("[")

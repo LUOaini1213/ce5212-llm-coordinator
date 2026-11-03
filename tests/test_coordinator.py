@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import re
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -11,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from coordinator.approval import parse_approvals
 from coordinator.behavior import BehaviorModeler
 from coordinator.grounding import ground_intent
 from coordinator.parse import extract_json_text, parse_json
@@ -18,7 +22,7 @@ from coordinator.policy import PolicyOptimizer
 from coordinator.rule_coord import RuleBasedCoordinator
 from coordinator.schema import DIRECTION_TO_EDGE, sanitize_intent
 from coordinator.snapshot import EdgeState, NetworkSnapshot
-from scripts import mock_compare, recount_approvals
+from scripts import check_public_tree, mock_compare, recount_approvals
 
 
 def _snap(**kwargs) -> NetworkSnapshot:
@@ -73,6 +77,33 @@ class ParseTests(unittest.TestCase):
 
     def test_bad_text_returns_fallback(self):
         self.assertEqual(parse_json("not json at all", {"ok": 1}), {"ok": 1})
+
+    def _parse_in_subprocess(self, raw: str):
+        """Run parse_json in a child process with a time bound, so a regression
+        to the old infinite loop fails this test instead of hanging the suite."""
+        code = (
+            "import json, sys; from coordinator.parse import parse_json; "
+            "print(json.dumps(parse_json(sys.argv[1], None)))"
+        )
+        done = subprocess.run(
+            [sys.executable, "-c", code, raw],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return json.loads(done.stdout)
+
+    def test_close_tag_before_open_tag_terminates(self):
+        self.assertEqual(self._parse_in_subprocess('{"a":1} </think> stray <think>'), {"a": 1})
+
+    def test_unclosed_think_tag_terminates(self):
+        self.assertEqual(self._parse_in_subprocess('{"a":1} <think> never closed'), {"a": 1})
+
+    def test_every_ordered_think_pair_is_removed(self):
+        raw = '<think>{"no":1}</think> <think>[9]</think>{"a":1}'
+        self.assertEqual(extract_json_text(raw), '{"a":1}')
 
 
 class RuleCoordTests(unittest.TestCase):
@@ -161,31 +192,35 @@ class BehaviorTests(unittest.TestCase):
 
 
 class SanitizeRepoTests(unittest.TestCase):
-    FORBIDDEN = (
-        "A033" + "1290N",
-        "C:/" + "Users/LW",
-        "C:\\" + "Users\\LW",
-        "183-" + "1949-6086",
-        "29795" + "70847",
-    )
+    """No student ID, phone number, long personal number or home path in the tree.
 
-    # .jsonl / .json are scanned too, so the shipped course log and the
-    # committed mock-compare example fall under this guard, not just prose.
-    SCANNED_SUFFIXES = {".py", ".md", ".txt", ".json", ".jsonl", ".yml", ".yaml"}
-    SKIP_DIRS = {"__pycache__", ".git", ".venv", "venv", ".pytest_cache"}
+    The guard refuses these by shape (scripts/check_public_tree.py) and stores
+    no personal value, not even a hash.
+    """
 
-    def test_public_tree_has_no_student_id_or_home_path(self):
-        hits = []
-        for path in ROOT.rglob("*"):
-            if path.suffix.lower() not in self.SCANNED_SUFFIXES:
-                continue
-            if self.SKIP_DIRS.intersection(path.parts):
-                continue
-            text = path.read_text(encoding="utf-8")
-            for token in self.FORBIDDEN:
-                if token in text:
-                    hits.append(f"{path.relative_to(ROOT)}:{token}")
-        self.assertEqual(hits, [])
+    def test_public_tree_has_no_personal_identifier_or_home_path(self):
+        self.assertEqual(check_public_tree.scan(ROOT), [])
+
+    def test_guard_refuses_each_shape(self):
+        # Made-up values with the shapes the guard must refuse.
+        samples = {
+            "student-id": "id A" + "0000000" + "X here",
+            "home-path": "see " + "C:" + "\\Users" + "\\someone\\repo",
+            "phone": "call 100" + "-0000-" + "0000",
+            "long-number": "number 0" + "123456789 end",
+        }
+        for shape, text in samples.items():
+            with self.subTest(shape=shape):
+                self.assertIn(shape, [name for _line, name in check_public_tree.scan_text(text)])
+        posix_home = "/" + "home/someone/repo"
+        self.assertTrue(check_public_tree.scan_text(posix_home))
+        self.assertEqual(check_public_tree.scan_text("edge 479165267, t=1350.0, A12"), [])
+
+    def test_planted_value_in_a_scratch_file_turns_the_scan_red(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "notes.md").write_text("contact 100" + "-0000-" + "0000\n", encoding="utf-8")
+            problems = check_public_tree.scan(Path(tmp))
+        self.assertEqual(problems, ["notes.md:1: phone-shaped string"])
 
 
 class RecountTests(unittest.TestCase):
@@ -205,8 +240,74 @@ class RecountTests(unittest.TestCase):
         counts = recount_approvals.recount(recount_approvals.DEFAULT_LOG)
         self.assertEqual(recount_approvals.check_readme(counts, recount_approvals.README), [])
 
+    def test_reply_parser_replays_every_logged_verdict(self):
+        counts = recount_approvals.recount(recount_approvals.DEFAULT_LOG)
+        self.assertEqual(counts["replies_replayed"], 43)
+        self.assertEqual(counts["replay_mismatch"], 0)
+        self.assertEqual(counts["inconsistent_rows"], 0)
+
+    def test_a_tampered_verdict_is_caught_by_the_replay(self):
+        rows = recount_approvals.DEFAULT_LOG.read_text(encoding="utf-8").splitlines()
+        target = next(i for i, line in enumerate(rows) if '"llm_called": true' in line)
+        tampered = rows[target].replace('"approvals": {"vms": true}', '"approvals": {"vms": false}')
+        self.assertNotEqual(tampered, rows[target])
+        rows[target] = tampered
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp, "tampered.jsonl")
+            log.write_text("\n".join(rows) + "\n", encoding="utf-8")
+            counts = recount_approvals.recount(log)
+        self.assertEqual(counts["replay_mismatch"], 1)
+
+    def test_readme_test_count_matches_the_suite(self):
+        suite = unittest.TestLoader().discover(str(ROOT / "tests"))
+        readme = recount_approvals.README.read_text(encoding="utf-8")
+        quoted = [int(n) for n in re.findall(r"#\s*(\d+) tests", readme)]
+        self.assertTrue(quoted, "README.md no longer quotes the test count")
+        self.assertEqual(set(quoted), {suite.countTestCases()})
+
+
+class ApprovalParseTests(unittest.TestCase):
+    def test_true_approves_and_reports_reply_keys(self):
+        self.assertEqual(
+            parse_approvals('{"vms":true,"rationale":"x"}', ["vms"]),
+            ({"vms": True}, ["vms", "rationale"]),
+        )
+
+    def test_default_deny(self):
+        cases = {
+            '{"vms":false}': {"vms": False},
+            '{"vms":"false"}': {"vms": False},
+            '{"vms":1}': {"vms": False},
+            '{"rationale":"forgot the key"}': {"vms": False},
+            "sure, go ahead": {"vms": False},
+            "[true]": {"vms": False},
+        }
+        for raw, expected in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(parse_approvals(raw, ["vms"])[0], expected)
+
+    def test_each_candidate_is_judged_separately(self):
+        approvals, _keys = parse_approvals(
+            '<think>hm</think>{"vms":"TRUE","dispatch":false}', ["vms", "dispatch"]
+        )
+        self.assertEqual(approvals, {"vms": True, "dispatch": False})
+
 
 class MockCompareScriptTests(unittest.TestCase):
+    def test_canned_replies_match_the_committed_example(self):
+        example = ROOT / "examples" / "mock_model_replies.json"
+        committed = json.loads(example.read_text(encoding="utf-8"))
+        self.assertEqual(mock_compare.run_canned_replies(), committed)
+
+    def test_placeholder_reply_never_reaches_an_edge(self):
+        rows = {row["case"]: row for row in mock_compare.run_canned_replies()}
+        placeholder = rows["peak, placeholder tokens instead of a direction"]["applied"]
+        self.assertIsNone(placeholder["edge_id"])
+        self.assertFalse(placeholder["dispatch_av"])
+        flagged = rows["peak, fenced JSON with integer text and a string false flag"]["applied"]
+        self.assertEqual(flagged["edge_id"], DIRECTION_TO_EDGE["east_to_cbd"])
+        self.assertFalse(flagged["alert_issued"])
+
     def test_script_writes_peak_apply_and_offpeak_skip(self):
         path = mock_compare.main()
         self.assertTrue(path.is_file())

@@ -1,8 +1,9 @@
 name: ci
 
 # Standard library only: the coordinator core has no dependencies, no model
-# and no SUMO. The mock comparison must reproduce the committed example, and
-# the approval numbers in README.md must fall out of data/course_run_B_s42.jsonl.
+# and no SUMO. The mock comparison must reproduce the committed examples, the
+# approval numbers in README.md must fall out of data/course_run_B_s42.jsonl,
+# and no tracked file may carry a personal identifier or a local home path.
 
 on:
   push:
@@ -10,8 +11,15 @@ on:
 
 jobs:
   tests:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -19,15 +27,25 @@ jobs:
           python-version: "3.11"
       - name: Unit tests
         run: python -m unittest discover -s tests -v
-      - name: Mock comparison reproduces the committed example
+      - name: Mock comparison reproduces the committed examples
         run: |
           python scripts/mock_compare.py
           python - <<'PY'
           import json
-          fresh = json.load(open("output/mock_compare.json", encoding="utf-8"))
-          committed = json.load(open("examples/mock_compare.json", encoding="utf-8"))
-          assert fresh == committed, "output/mock_compare.json drifted from examples/mock_compare.json"
-          print("mock comparison matches the committed example")
+          for name in ("mock_compare.json", "mock_model_replies.json"):
+              fresh = json.load(open(f"output/{name}", encoding="utf-8"))
+              committed = json.load(open(f"examples/{name}", encoding="utf-8"))
+              assert fresh == committed, f"output/{name} drifted from examples/{name}"
+              print(f"{name} matches the committed example")
           PY
       - name: Approval numbers in the README are recounted from the shipped log
         run: python scripts/recount_approvals.py --check
+      - name: No personal identifier or home path in the tree
+        run: python scripts/check_public_tree.py
+      - name: No local home path in tracked files (git grep, independent of the Python scan)
+        run: |
+          if git grep -nIiE '[a-z]:[\/]+users[\/]+[^\/[:space:]]+|/(Users|home)/[A-Za-z0-9_.-]+/' -- . ':!.github/workflows/ci.yml'; then
+            echo "local home path found in a tracked file" >&2
+            exit 1
+          fi
+          echo "no local home path in tracked files"

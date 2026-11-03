@@ -17,6 +17,11 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LOG = ROOT / "data" / "course_run_B_s42.jsonl"
 README = ROOT / "README.md"
 
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from coordinator.approval import parse_approvals  # noqa: E402
+
 # The fenced block in README.md that must equal this script's stdout verbatim.
 BLOCK_RE = re.compile(
     r"```text\n(recount of data/course_run_B_s42\.jsonl\n.*?)```",
@@ -47,12 +52,19 @@ PROSE_CLAIMS = (
         re.compile(r"all (?P<candidates>\d+) candidates in this run are `vms`"),
         ("candidates",),
     ),
+    (
+        re.compile(
+            r"re-parses all (?P<replies_replayed>\d+) logged replies"
+        ),
+        ("replies_replayed",),
+    ),
 )
 
 
 def recount(log_path: Path) -> dict:
     """Walk the log once and count ticks, candidates and approvals."""
     ticks = candidates = approved = rejected = no_candidate = model_calls = 0
+    replayed = replay_mismatch = inconsistent = 0
     by_key: dict[str, int] = {}
     for lineno, line in enumerate(log_path.read_text(encoding="utf-8").splitlines(), 1):
         line = line.strip()
@@ -68,6 +80,22 @@ def recount(log_path: Path) -> dict:
             no_candidate += 1
         if row.get("llm_called"):
             model_calls += 1
+        # A tick reaches the model exactly when the rule layer proposed
+        # something, and n_candidates agrees with the candidate list.
+        n_listed = len(row.get("candidates", []))
+        if bool(row.get("llm_called")) != (n_listed > 0) or n_listed != int(
+            row.get("n_candidates", 0)
+        ):
+            inconsistent += 1
+        # Replay the shipped reply parser over every logged model reply: it
+        # must give back the logged verdicts and the logged parsed keys.
+        if "raw" in row:
+            keys = [str(c.get("key", "?")) for c in row.get("candidates", [])]
+            got_approvals, got_keys = parse_approvals(row["raw"], keys)
+            if got_approvals == row.get("approvals") and got_keys == row.get("parsed_keys"):
+                replayed += 1
+            else:
+                replay_mismatch += 1
         for candidate in row.get("candidates", []):
             key = str(candidate.get("key", "?"))
             by_key[key] = by_key.get(key, 0) + 1
@@ -90,6 +118,9 @@ def recount(log_path: Path) -> dict:
         "no_candidate_pct_rounded": int(round(pct)),
         "model_calls": model_calls,
         "by_key": dict(sorted(by_key.items())),
+        "replies_replayed": replayed,
+        "replay_mismatch": replay_mismatch,
+        "inconsistent_rows": inconsistent,
     }
 
 
@@ -107,6 +138,12 @@ def render(counts: dict) -> str:
             "candidates by action type",
             ", ".join(f"{key} {n}" for key, n in counts["by_key"].items()) or "none",
         ),
+        (
+            "logged replies re-parsed",
+            f"{counts['replies_replayed']} of "
+            f"{counts['replies_replayed'] + counts['replay_mismatch']}",
+        ),
+        ("inconsistent rows", counts["inconsistent_rows"]),
     )
     lines = [f"recount of data/{counts['log']}"]
     lines += [f"{label:<28}{value}" for label, value in rows]
@@ -127,17 +164,25 @@ def check_readme(counts: dict, readme: Path) -> list[str]:
             f"{match.group(1)}--- recount ---\n{render(counts)}"
         )
 
+    # Every occurrence is checked, so a summary line near the top and the
+    # longer paragraph further down cannot drift apart.
     for pattern, fields in PROSE_CLAIMS:
-        found = pattern.search(text)
-        if found is None:
+        matches = list(pattern.finditer(text))
+        if not matches:
             problems.append(f"README.md no longer contains the claim /{pattern.pattern}/")
             continue
-        for field in fields:
-            quoted = int(found.group(field))
-            if quoted != counts[field]:
-                problems.append(
-                    f"README.md says {field}={quoted}, the log gives {counts[field]}"
-                )
+        for found in matches:
+            for field in fields:
+                quoted = int(found.group(field))
+                if quoted != counts[field]:
+                    problems.append(
+                        f"README.md says {field}={quoted}, the log gives {counts[field]}"
+                    )
+    if counts["replay_mismatch"] or counts["inconsistent_rows"]:
+        problems.append(
+            f"log replay: {counts['replay_mismatch']} reply/verdict mismatches, "
+            f"{counts['inconsistent_rows']} inconsistent rows"
+        )
     return problems
 
 

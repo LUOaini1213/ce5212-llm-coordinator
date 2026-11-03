@@ -18,8 +18,11 @@ apart from LF line endings.
 | `parsed_keys` | keys recovered from `raw` after parsing |
 | `diag` | rule-layer state that decided whether to propose: worst occupancy, waiting AVs, spoke load, MRT ETA |
 
-`python scripts/recount_approvals.py` counts the file; `--check` also diffs the
-result against the numbers written in the top-level README.
+`python scripts/recount_approvals.py` counts the file and replays every logged
+`raw` reply through `coordinator/approval.py` (a reply parser written for this
+repo, not the course loop's own code), checking that it gives back the logged
+`approvals` and `parsed_keys`; `--check` also diffs the result against the
+numbers written in the top-level README.
 
 The SUMO network, person demand and the Ollama loop that produced this log stay
 in the private course folder, so the run itself is not reproducible from here —
